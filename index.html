@@ -107,7 +107,7 @@ const PRE={"W":300,"H":380,"proj":{"S":1291.105,"TX":-133.339,"TY":1237.292},"re
    Lasciando il campo vuoto, il sito usa i dati d'esempio
    incorporati qui sotto (Novara).
    ========================================================= */
-const SHEET_CSV_URL="";
+const SHEET_CSV_URL="https://docs.google.com/spreadsheets/d/1Ecf6EonOZprhdYa05Sj2u4_3FIKombrYxdKiK-TmI4s/gviz/tq?tqx=out:csv&gid=655031597";
 const SEED_CSV="regione,citta,lat,lon,nome,tipo,attivita,bio,crew,membri,discografia,ascolto,discogs,wiki\nPiemonte,Novara,45.45,8.62,Sottotono,gruppo,dal 1994,\"Tra i primi gruppi rap italiani a ottenere un successo nazionale, con un suono debitore della West Coast e del soul. Nucleo del collettivo Area Cronica; sciolti nel 2001, di nuovo insieme dal 2021.\",Area Cronica,Tormento (Massimiliano Cellamaro); Big Fish (Massimiliano Dagani); Nega (1994-1995); DJ Irmu (1994-1995),\"Soprattutto sotto (Vox Pop / Flying Records, 1994); Sotto effetto stono (WEA, 1996); Sotto lo stesso effetto (WEA / Area Cronica Entertainment, 1999); ...In teoria (Warner Music Italy, 2001); Originali (Universal, 2021)\",https://www.youtube.com/results?search_query=Sottotono,https://www.discogs.com/artist/473692-Sottotono,https://it.wikipedia.org/wiki/Sottotono\nPiemonte,Novara,45.45,8.62,Area Cronica,collettivo,1996-2000,\"Etichetta e collettivo fondati dai Sottotono nel 1996 con sede a Novara, tra le realtà più influenti del rap italiano degli anni novanta; riunì artisti da Torino, Milano e Sardegna.\",,Sottotono; Lyricalz; Left Side; Sab Sista; Bassi Maestro; C.D.B.; Chief; Maku Go & Sardo Triba; Jasmine; Eva,\"Areacronica.com (Area Cronica Entertainment, 1999); Nel vortice vol. 1 (Area Cronica Entertainment, 1999); Nel vortice vol. 2 (Area Cronica Entertainment, 1999); Nel vortice vol. 3 (Area Cronica Entertainment, 2000); Nel vortice vol. 4 (Area Cronica Entertainment, 2000); Zora la vampira (colonna sonora, 2000)\",https://www.youtube.com/results?search_query=Area+Cronica+rap,https://www.discogs.com/label/119589-Area-Cronica-Entertainment,https://it.wikipedia.org/wiki/Area_Cronica_Entertainment";
 
 /* palette: 20 sfumature dalle 5 ancore (fondo freddo) */
@@ -188,7 +188,7 @@ function renderMap(){
 map.addEventListener('click',()=>{chips.style.display='none';});
 
 /* ---------- boot ---------- */
-function start(rows){buildData(rows);renderMap();}
+function start(rows){if(!rows||!rows.length||!rows.some(r=>r.nome&&r.regione&&r.citta))rows=parseCSV(SEED_CSV);buildData(rows);renderMap();}
 (function boot(){
   if(SHEET_CSV_URL){fetch(SHEET_CSV_URL).then(r=>r.text()).then(t=>start(parseCSV(t))).catch(()=>start(parseCSV(SEED_CSV)));}
   else start(parseCSV(SEED_CSV));
