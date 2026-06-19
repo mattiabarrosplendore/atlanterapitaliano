@@ -17,7 +17,7 @@
 html,body{height:100%;margin:0}
 body{background:var(--bg);color:var(--ink);font-family:var(--sans);overflow:hidden;-webkit-font-smoothing:antialiased}
 #stage{position:fixed;inset:0}
-#map{width:100%;height:100%;display:block}
+#map{width:100%;height:100%;display:block;touch-action:none}
 .rg{cursor:pointer;pointer-events:all;transition:opacity .3s ease}
 .rg.dim{opacity:0.30}
 .rg.sel{stroke:var(--ink);stroke-width:0.7}
@@ -157,16 +157,48 @@ function buildData(rows){
 const W=PRE.W,H=PRE.H,ns="http://www.w3.org/2000/svg";
 const map=document.getElementById('map'),back=document.getElementById('back'),chips=document.getElementById('chips'),ov=document.getElementById('ov');
 const reduce=matchMedia("(prefers-reduced-motion:reduce)").matches;
-let features={},current=null,curView=[0,0,W,H];
+let features={},current=null,curView=[0,0,W,H],suppressTap=false;
 function setVB(s){map.setAttribute('viewBox',s.map(v=>+v.toFixed(1)).join(' '));}
 function tVB(b){let[x0,y0,x1,y1]=b,w=x1-x0,h=y1-y0,cx=(x0+x1)/2,cy=(y0+y1)/2;w*=1.5;h*=1.5;const a=W/H;if(w/h>a)h=w/a;else w=h*a;return[cx-w/2,cy-h/2,w,h];}
 function animVB(to){if(reduce){curView=to.slice();setVB(to);return;}const f=curView.slice(),t0=performance.now();curView=to.slice();(function st(now){const p=Math.min(1,(now-t0)/520),e=p<.5?2*p*p:1-Math.pow(-2*p+2,2)/2;setVB(f.map((v,i)=>v+(to[i]-v)*e));if(p<1)requestAnimationFrame(st);})(t0);}
 function clearCities(){const g=document.getElementById('cities');if(g)g.remove();}
 function svgToPage(px,py){const r=map.getBoundingClientRect(),vb=curView,sc=Math.min(r.width/vb[2],r.height/vb[3]);const ox=r.left+(r.width-vb[2]*sc)/2,oy=r.top+(r.height-vb[3]*sc)/2;return[ox+(px-vb[0])*sc,oy+(py-vb[1])*sc];}
-function drawCities(reg,vb){clearCities();if(!DATA[reg])return;const g=document.createElementNS(ns,'g');g.id='cities';map.appendChild(g);const upp=vb[2]/300,r=2.7*upp,fs=10*upp;Object.keys(DATA[reg]).forEach(city=>{const p=CITYXY[reg+"|"+city];if(!p)return;const go=ev=>{ev.stopPropagation();openChips(reg,city);};const hit=document.createElementNS(ns,'circle');hit.setAttribute('cx',p[0]);hit.setAttribute('cy',p[1]);hit.setAttribute('r',Math.max(r*3.4,7*upp));hit.setAttribute('fill','transparent');hit.style.cursor='pointer';hit.addEventListener('click',go);const dot=document.createElementNS(ns,'circle');dot.setAttribute('class','cdot');dot.setAttribute('cx',p[0]);dot.setAttribute('cy',p[1]);dot.setAttribute('r',r);dot.style.cursor='pointer';const tx=document.createElementNS(ns,'text');tx.setAttribute('class','clbl');tx.setAttribute('x',p[0]+r+1.6*upp);tx.setAttribute('y',p[1]+fs*0.35);tx.setAttribute('font-size',fs);tx.textContent=city;tx.style.cursor='pointer';dot.addEventListener('click',go);tx.addEventListener('click',go);g.appendChild(hit);g.appendChild(dot);g.appendChild(tx);});}
-function selectRegion(name){current=name;back.style.display='inline-flex';chips.style.display='none';Object.entries(features).forEach(([n,el])=>{el.classList.toggle('sel',n===name);el.classList.toggle('dim',n!==name);});const vb=tVB(PRE.reg.find(r=>r.n===name).b);animVB(vb);setTimeout(()=>drawCities(name,vb),140);}
+function drawCities(reg,vb){
+  clearCities();if(!DATA[reg])return;
+  const g=document.createElementNS(ns,'g');g.id='cities';map.appendChild(g);
+  const upp=vb[2]/300,r=2.7*upp,fs=10*upp,gap=1.6*upp,cw=fs*0.6;
+  const items=Object.keys(DATA[reg]).map(city=>{const p=CITYXY[reg+"|"+city];return p?{city,p,n:DATA[reg][city].length,w:city.length*cw}:null;}).filter(Boolean);
+  const dotRects=[];
+  items.forEach(it=>{const p=it.p,go=ev=>{ev.stopPropagation();openChips(reg,it.city);};
+    const hit=document.createElementNS(ns,'circle');hit.setAttribute('cx',p[0]);hit.setAttribute('cy',p[1]);hit.setAttribute('r',Math.max(r*3.4,7*upp));hit.setAttribute('fill','transparent');hit.style.cursor='pointer';hit.addEventListener('click',go);
+    const dot=document.createElementNS(ns,'circle');dot.setAttribute('class','cdot');dot.setAttribute('cx',p[0]);dot.setAttribute('cy',p[1]);dot.setAttribute('r',r);dot.style.cursor='pointer';dot.addEventListener('click',go);
+    it.hit=hit;it.dot=dot;dotRects.push([p[0]-r,p[1]-r,p[0]+r,p[1]+r]);});
+  items.sort((a,b)=>b.n-a.n||a.city.localeCompare(b.city,'it'));
+  const placed=[],overlap=(a,b)=>!(a[2]<=b[0]||a[0]>=b[2]||a[3]<=b[1]||a[1]>=b[3]);
+  const fits=rect=>{for(const q of placed)if(overlap(rect,q))return false;for(const d of dotRects)if(overlap(rect,d))return false;return true;};
+  items.forEach(it=>{const p=it.p,w=it.w,h=fs;
+    const cands=[
+      {x:p[0]+r+gap,y:p[1]+fs*0.35,anchor:'start',rect:[p[0]+r+gap,p[1]-h*0.6,p[0]+r+gap+w,p[1]+h*0.6]},
+      {x:p[0]-r-gap,y:p[1]+fs*0.35,anchor:'end',rect:[p[0]-r-gap-w,p[1]-h*0.6,p[0]-r-gap,p[1]+h*0.6]},
+      {x:p[0],y:p[1]-r-gap-fs*0.25,anchor:'middle',rect:[p[0]-w/2,p[1]-r-gap-h,p[0]+w/2,p[1]-r-gap]},
+      {x:p[0],y:p[1]+r+gap+fs*0.8,anchor:'middle',rect:[p[0]-w/2,p[1]+r+gap,p[0]+w/2,p[1]+r+gap+h]}
+    ];
+    const c=cands.find(c=>fits(c.rect));
+    if(c){placed.push(c.rect);const tx=document.createElementNS(ns,'text');tx.setAttribute('class','clbl');tx.setAttribute('x',c.x);tx.setAttribute('y',c.y);tx.setAttribute('font-size',fs);tx.setAttribute('text-anchor',c.anchor);tx.setAttribute('stroke','var(--bg)');tx.setAttribute('stroke-width',2*upp);tx.setAttribute('paint-order','stroke');tx.setAttribute('stroke-linejoin','round');tx.textContent=it.city;tx.style.cursor='pointer';tx.addEventListener('click',ev=>{ev.stopPropagation();openChips(reg,it.city);});it.label=tx;}});
+  items.forEach(it=>g.appendChild(it.hit));
+  items.forEach(it=>g.appendChild(it.dot));
+  items.forEach(it=>{if(it.label)g.appendChild(it.label);});
+  const hl=document.createElementNS(ns,'text');hl.setAttribute('class','clbl');hl.setAttribute('font-size',fs);hl.setAttribute('text-anchor','start');hl.setAttribute('stroke','var(--bg)');hl.setAttribute('stroke-width',2.6*upp);hl.setAttribute('paint-order','stroke');hl.setAttribute('stroke-linejoin','round');hl.setAttribute('font-weight','700');hl.style.display='none';hl.style.pointerEvents='none';g.appendChild(hl);
+  items.forEach(it=>{if(it.label)return;
+    const show=()=>{hl.setAttribute('x',it.p[0]+r+gap);hl.setAttribute('y',it.p[1]+fs*0.35);hl.textContent=it.city;hl.style.display='';g.appendChild(hl);};
+    const hide=()=>{hl.style.display='none';};
+    it.hit.addEventListener('mouseenter',show);it.hit.addEventListener('mouseleave',hide);
+    it.dot.addEventListener('mouseenter',show);it.dot.addEventListener('mouseleave',hide);});
+}
+function selectRegion(name){if(suppressTap)return;current=name;back.style.display='inline-flex';chips.style.display='none';Object.entries(features).forEach(([n,el])=>{el.classList.toggle('sel',n===name);el.classList.toggle('dim',n!==name);});const vb=tVB(PRE.reg.find(r=>r.n===name).b);animVB(vb);setTimeout(()=>drawCities(name,vb),140);}
 const fold=s=>(s||"").toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
 function openChips(reg,city){
+  if(suppressTap)return;
   const arts=DATA[reg][city];
   const search=arts.length>7;
   chips.innerHTML='<div class="hd"><button class="x2" aria-label="Chiudi">✕</button>'+
@@ -211,6 +243,21 @@ function renderMap(){
   const ovl=document.createElementNS(ns,'g');ovl.setAttribute('fill','none');ovl.setAttribute('stroke','#0000001A');ovl.setAttribute('stroke-width','0.4');ovl.setAttribute('stroke-linejoin','round');ovl.setAttribute('pointer-events','none');PRE.reg.forEach(rg=>{const p=document.createElementNS(ns,'path');p.setAttribute('d',rg.d);ovl.appendChild(p);});map.appendChild(ovl);
 }
 map.addEventListener('click',()=>{chips.style.display='none';});
+
+/* ---------- zoom & pan (entro la regione selezionata) ---------- */
+let relPending=false;
+function relabel(){if(current&&!relPending){relPending=true;requestAnimationFrame(()=>{relPending=false;drawCities(current,curView);});}}
+function clampView(v){const minW=8,minH=minW*(H/W);if(v[2]>W){const s=W/v[2];v[2]=W;v[3]*=s;}if(v[3]>H){const s=H/v[3];v[3]=H;v[2]*=s;}if(v[2]<minW){const s=minW/v[2];v[2]=minW;v[3]*=s;}if(v[3]<minH){const s=minH/v[3];v[3]=minH;v[2]*=s;}v[0]=Math.min(Math.max(v[0],-20),W-v[2]+20);v[1]=Math.min(Math.max(v[1],-20),H-v[3]+20);return v;}
+function clientToSvg(cx,cy){const r=map.getBoundingClientRect(),vb=curView,sc=Math.min(r.width/vb[2],r.height/vb[3]);const ox=r.left+(r.width-vb[2]*sc)/2,oy=r.top+(r.height-vb[3]*sc)/2;return [vb[0]+(cx-ox)/sc,vb[1]+(cy-oy)/sc];}
+function zoomAt(cx,cy,factor){if(!current)return;const s=clientToSvg(cx,cy);let v=curView.slice();const nw=v[2]*factor,nh=v[3]*factor;v[0]=s[0]-(s[0]-v[0])*(nw/v[2]);v[1]=s[1]-(s[1]-v[1])*(nh/v[3]);v[2]=nw;v[3]=nh;curView=clampView(v);setVB(curView);relabel();}
+map.addEventListener('wheel',e=>{if(!current)return;e.preventDefault();zoomAt(e.clientX,e.clientY,e.deltaY>0?1.12:0.89);},{passive:false});
+const pts=new Map();let panLast=null,pinchPrev=0,moved=0;
+map.addEventListener('pointerdown',e=>{if(!current)return;suppressTap=false;pts.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pts.size===1){panLast={x:e.clientX,y:e.clientY};moved=0;}else if(pts.size===2){const a=[...pts.values()];pinchPrev=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);}});
+map.addEventListener('pointermove',e=>{if(!pts.has(e.pointerId))return;pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(pts.size>=2){const a=[...pts.values()];const d=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);if(pinchPrev){zoomAt((a[0].x+a[1].x)/2,(a[0].y+a[1].y)/2,pinchPrev/d);}pinchPrev=d;moved=99;suppressTap=true;}
+  else if(panLast){const r=map.getBoundingClientRect(),vb=curView,sc=Math.min(r.width/vb[2],r.height/vb[3]);const dx=(e.clientX-panLast.x)/sc,dy=(e.clientY-panLast.y)/sc;moved+=Math.abs(e.clientX-panLast.x)+Math.abs(e.clientY-panLast.y);if(moved>6)suppressTap=true;let v=curView.slice();v[0]-=dx;v[1]-=dy;curView=clampView(v);setVB(curView);panLast={x:e.clientX,y:e.clientY};relabel();}});
+function endPt(e){pts.delete(e.pointerId);if(pts.size<2)pinchPrev=0;if(pts.size===0){panLast=null;setTimeout(()=>{suppressTap=false;},0);}}
+map.addEventListener('pointerup',endPt);map.addEventListener('pointercancel',endPt);
 
 /* ---------- boot ---------- */
 function start(rows){if(!rows||!rows.length||!rows.some(r=>r.nome&&r.regione&&r.citta))rows=parseCSV(SEED_CSV);buildData(rows);renderMap();}
